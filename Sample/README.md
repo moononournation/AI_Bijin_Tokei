@@ -2,7 +2,7 @@
 
 Please copy the settings.ini and one of the contents of jpg* folder to microSD card.
 
-```
+```text
 💾 microSD/
 ├── 📂 00/
 ├── 📂 01/
