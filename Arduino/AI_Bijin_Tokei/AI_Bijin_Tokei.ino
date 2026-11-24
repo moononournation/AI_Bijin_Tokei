@@ -1,13 +1,16 @@
 /*******************************************************************************
  * AI Bijin Tokei
+ *
+ * depended libries:
+ * minIniFS: https://github.com/guerratron/minIniFS.git
+ * Dev Device pins: https://github.com/moononournation/Dev_Device_Pins.git
+ * Arduino_GFX: https://github.com/moononournation/Arduino_GFX.git
  ******************************************************************************/
-const char *SSID_NAME = "YourAP";
-const char *SSID_PASSWORD = "PleaseInputYourPasswordHere";
-const long gmtOffset_sec = 8 * 60 * 60; // +8, timezone
 
 /* Uncomment one and only one below Dev Device pins header */
 // #include <PINS_MAKERFABS_ESP32_S3_TFT_4_0.h>
 #include <PINS_ESP32-C5-LCD-2_73.h>
+// #include <PINS_JC3248W535.h>
 
 #ifndef DEV_DEVICE_PINS
   #error "Please include one of the Dev Device pins header"
@@ -21,11 +24,18 @@ const long gmtOffset_sec = 8 * 60 * 60; // +8, timezone
 RTC_CLASS rtc;
 #endif
 
+#include <minIniFS.h>
+char* iniFileName = "/settings.ini";
+long gmtOffset_sec;
+char ssid_name[33];
+char ssid_password[33];
+
 #include <WiFi.h>
 #include <WiFiMulti.h>
 WiFiMulti WiFiMulti;
 
 const char *root = "/root";
+#include <FS.h>
 #include <FFat.h>
 #include <LittleFS.h>
 #include <SPIFFS.h>
@@ -88,30 +98,28 @@ void setup()
 #endif
 
   // Init Display
+#ifdef CANVAS_PREFERRED
+  gfx = new Arduino_Canvas(gfx->width(), gfx->height(), gfx);
+#endif
   if (!gfx->begin(GFX_SPEED))
   {
     Serial.println("gfx->begin() failed!");
   }
   gfx->fillScreen(RGB565_BLACK);
+#ifdef CANVAS_PREFERRED
   gfx->flush();
+#endif
 
 #ifdef GFX_BL
 #if defined(ESP_ARDUINO_VERSION_MAJOR) && (ESP_ARDUINO_VERSION_MAJOR < 3)
   ledcSetup(0, 1000, 8);
   ledcAttachPin(GFX_BL, 0);
-  ledcWrite(0, 63);
+  ledcWrite(0, 127);
 #else  // ESP_ARDUINO_VERSION_MAJOR >= 3
   ledcAttachChannel(GFX_BL, 1000, 8, 1);
-  ledcWrite(GFX_BL, 63);
+  ledcWrite(GFX_BL, 127);
 #endif // ESP_ARDUINO_VERSION_MAJOR >= 3
 #endif // GFX_BL
-
-  Serial.println(F("Connection to WiFi..."));
-  gfx->setTextColor(RGB565_RED);
-  gfx->println(F("Connection to WiFi..."));
-  gfx->flush();
-  WiFi.mode(WIFI_STA);
-  WiFiMulti.addAP(SSID_NAME, SSID_PASSWORD);
 
   gfx->setTextColor(RGB565_ORANGE);
 #if defined(SD_D1) && defined(SOC_SDMMC_HOST_SUPPORTED)
@@ -148,7 +156,27 @@ void setup()
     Serial.println(F("File System Mounted"));
     gfx->println(F("File System Mounted"));
   }
+#ifdef CANVAS_PREFERRED
   gfx->flush();
+#endif
+
+  minIniFS ini(iniFileName);
+  ini_FS((fs::FS&)FILESYSTEM);
+  // ini.showKeysValues();
+  ini_gets("wifi", "SSID_NAME", "", ssid_name, 255, iniFileName);
+  ini_gets("wifi", "SSID_PASSWORD", "", ssid_password, 255, iniFileName);
+  gmtOffset_sec = ini_getl("time", "timezone", 0, iniFileName) * 60 * 60 * 1000;
+  Serial.printf("wifi settings: %s, %s\n", ssid_name, ssid_password);
+  Serial.printf("gmtOffset_sec: %ld\n", gmtOffset_sec);
+
+  Serial.println(F("Connection to WiFi..."));
+  gfx->setTextColor(RGB565_RED);
+  gfx->println(F("Connection to WiFi..."));
+#ifdef CANVAS_PREFERRED
+  gfx->flush();
+#endif
+  WiFi.mode(WIFI_STA);
+  WiFiMulti.addAP(ssid_name, ssid_password);
 }
 
 unsigned long next_update_ntp_ms = 0;
@@ -162,7 +190,7 @@ void loop()
   {
     rounding_time = rtc.time(NULL);
 #else
-  if ((millis() < next_update_ntp_ms)
+  if (millis() < next_update_ntp_ms)
   {
     time(&rounding_time);
 #endif
@@ -231,19 +259,20 @@ void loop()
         if (file_count > 0) {
           jpegDraw((char *)f.c_str(), jpegDrawCallback, false /* useBigEndian */,
             0 /* x */, 0 /* y */, gfx->width() /* widthLimit */, gfx->height() /* heightLimit */);
+#ifdef CANVAS_PREFERRED
+          gfx->flush();
+#endif
         }
       }
     }
   }
 
-#ifdef RTC_SUPPORT
   if ((millis() > next_update_ntp_ms) && (WiFiMulti.run() == WL_CONNECTED))
   {
     Serial.println(F("setClock();"));
     setClock();
     next_update_ntp_ms = millis() + (1000 * 60 * 60 * 24);
   }
-#endif
 
   delay(1000);
 }
